@@ -1,6 +1,6 @@
 # BLM3810 Biyoenformatiğe Giriş - Akciğer Adenokarsinomu (GSE68465) Projesi
 
-Bu proje, Yıldız Teknik Üniversitesi Bilgisayar Mühendisliği Bölümü **BLM3810 Biyoenformatiğe Giriş** dersi kapsamında geliştirilmiştir. Proje, Akciğer Adenokarsinomu (Lung Adenocarcinoma) hastalarından alınan gen ifadesi verileri (NCBI GEO: GSE68465) üzerinde yapılan biyoenformatik analizleri (Aşama 1) ve hastaların yaşamsal durumlarını (Hayatta / Vefat) tahmin eden makine öğrenmesi modellerini (Aşama 2) içermektedir.
+Bu proje, Yıldız Teknik Üniversitesi Bilgisayar Mühendisliği Bölümü **BLM3810 Biyoenformatiğe Giriş** dersi kapsamında geliştirilmiştir. Proje, Akciğer Adenokarsinomu (Lung Adenocarcinoma) hastalarından alınan gen ifadesi verileri (NCBI GEO: GSE68465) üzerinde yapılan biyoenformatik analizleri (Aşama 1) ve hastaların histolojik tümör derecelerini (Well Differentiated vs. Poorly Differentiated) tahmin eden makine öğrenmesi modellerini (Aşama 2) içermektedir.
 
 Sistem yükleme limitleri nedeniyle ham veri setleri (boyutları çok büyük olduğu için) temizlenmiştir. Ön işleme kodunu çalıştırdığınızda eksik olan ham veriler NCBI GEO üzerinden otomatik olarak tekrar indirilecektir.
 
@@ -13,11 +13,11 @@ Sistem yükleme limitleri nedeniyle ham veri setleri (boyutları çok büyük ol
 *   📁 **`results/`**: Diferansiyel ifade tablolarını, modül gen listelerini, WGCNA hub genlerini, Cytoscape düğüm/kenar dosyalarını ve makine öğrenmesi performans karşılaştırma tablolarını barındırır.
 *   📄 **`packages.R`**: Projede kullanılan tüm R ve Bioconductor kütüphanelerinin kurulumunu yapan R scripti.
 *   📄 **`GSE68465_preprocessing.R`**: Veri setini GEO'dan indiren, temizleyen, prob-gen eşlemesi yapan ve klinik meta-veriyi düzenleyen ön işleme scripti.
-*   📄 **`GSE68465_DGE.R`**: Yaşamsal duruma göre (Dead vs Alive) diferansiyel ifade gösteren genleri `limma` ile analiz eden script.
+*   📄 **`GSE68465_DGE.R`**: Histolojik dereceye göre (Well vs Poorly) diferansiyel ifade gösteren genleri `limma` ile analiz eden script.
 *   📄 **`GSE68465_visualization.R`**: Volkan (Volcano) grafiği ile en anlamlı genlerin Wilcoxon p-değerli tekli/çoklu boxplot ve violin grafiklerini çizen script.
 *   📄 **`GSE68465_survival.R`**: En anlamlı genler için Kaplan-Meier eğrilerini çıkaran ve klinik değişkenlerle çok değişkenli Cox regresyonu yapıp Forest plot çizen script.
 *   📄 **`GSE68465_wgcna.R`**: Ağırlıklı Gen Eş-ifade Ağı Analizi (WGCNA) yaparak gen modüllerini çıkaran, hub genleri bulan ve Cytoscape ağ dosyalarını üreten script.
-*   📄 **`GSE68465_GO.R`**: Yaşamsal durumla en çok ilişkili gen modülü için Gene Ontology (GO) zenginleştirme analizi yapan script.
+*   📄 **`GSE68465_GO.R`**: Histolojik dereceyle en çok ilişkili gen modülü için Gene Ontology (GO) zenginleştirme analizi yapan script.
 *   📄 **`GSE68465_ML.R`**: Aşama 2 gereksinimlerini karşılayan, 3 farklı özellik seçimi düzeneği ve 3 makine öğrenmesi modeli (Random Forest, SVM, Lojistik Regresyon) ile 5-Fold çapraz doğrulama yapan script.
 
 ---
@@ -57,7 +57,7 @@ Top 5 aday gen için Kaplan-Meier sağkalım eğrilerini çizdirmek ve klinik de
 ```bash
 Rscript GSE68465_survival.R
 ```
-*Üretilen dosyalar:* `plots/survival_[GEN].png` ve `plots/forest_SFTPB.png`.
+*Üretilen dosyalar:* `plots/survival_[GEN].png` ve `plots/forest_multivariate.png`.
 
 ### 6. WGCNA Eş-ifade Ağı Analizi
 Ağ analizini gerçekleştirmek, modülleri bulmak, kME değerlerine göre en iyi 5 hub geni tespit etmek ve Cytoscape ağ verilerini kaydetmek için:
@@ -67,7 +67,7 @@ Rscript GSE68465_wgcna.R
 *Üretilen dosyalar:* `results/hubsInEachModule.csv`, `plots/module-trait2.png`, `results/edges_[modül].txt` vb.
 
 ### 7. GO Zenginleştirme (Enrichment) Analizi
-Yaşamsal durumla en yüksek korelasyona sahip modüldeki genlerin işlevlerini (GO Biyolojik Süreçler) belirlemek için:
+Histolojik tümör derecesiyle en yüksek korelasyona sahip modüldeki genlerin işlevlerini (GO Biyolojik Süreçler) belirlemek için:
 ```bash
 Rscript GSE68465_GO.R
 ```
@@ -78,11 +78,11 @@ Modelleri eğitmek, veri sızıntısını önlemek için özellik seçimini fold
 ```bash
 Rscript GSE68465_ML.R
 ```
-*Üretilen dosyalar:* `results/ML_performance_comparison.csv`, `plots/ROC_comparison.png`, `plots/confusion_matrix_best.png`.
+*Üretilen dosyalar:* `results/ML_performance_comparison.csv`, `plots/ROC_comparison.png`, `plots/confusion_matrices_all.png`.
 
 ---
 
 ## 📌 Önemli Bilgiler ve Analiz Kararları
 
-1.  **Yaşamsal Durum (Vital Status) Kararı:** Klinik tabloda nüks (Relapse) durumunda çok fazla boş veri (81 eksik değer) bulunduğu için, sınıflandırma ve DGE analizlerinde en güvenilir ve 443 hastada da 100% dolu olan **Vital Status (Alive vs. Dead)** parametresi sınıf değişkeni olarak seçilmiştir.
+1.  **Sınıflandırma Değişkeni (Histologic Grade):** Klinik meta-veride yer alan histolojik derece (grade) parametresi, tümörün diferansiyasyon seviyesini ("Well Differentiated" - İyi Diferansiye / "Poorly Differentiated" - Kötü Diferansiye) temsil etmektedir. Tümörlerin biyolojik agresifliğini sınıflandırmak amacıyla bu değişken ana hedef olarak seçilmiş, grade değeri bulunmayan (NA) hastalar analiz dışı bırakılmıştır.
 2.  **Veri Sızıntısının Önlenmesi (Data Leakage):** Makine öğrenmesi Setup-2 (LASSO) ve Setup-3 (PCA) aşamalarında, özellik seçimi ve boyut indirgeme işlemleri çapraz doğrulama fold'larının **sadece eğitim (train) seti** üzerinde uygulanmış, test setine ait hiçbir bilgi eğitim aşamasına sızdırılmamıştır.
