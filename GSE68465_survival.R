@@ -19,12 +19,13 @@ cat("secilen genler:", paste(top_5_genes, collapse = ", "), "\n")
 for (gene in top_5_genes) {
   cat("KM egrisi:", gene, "\n")
   
+  matched_rows <- match(rownames(GSE68465), rownames(df_label))
   df_surv <- data.frame(
     expression = as.numeric(GSE68465[, gene]),
-    time = df_label$time,
-    status = df_label$event
+    time = df_label$time[matched_rows],
+    status = df_label$event[matched_rows]
   )
-  rownames(df_surv) <- rownames(df_label)
+  rownames(df_surv) <- rownames(GSE68465)
   df_surv <- df_surv[complete.cases(df_surv), ]
   
   # mediana gore boluyoruz
@@ -51,39 +52,40 @@ for (gene in top_5_genes) {
   dev.off()
 }
 
-# cox regresyonu
-# genin etkisini bakiyoruz
-top_overall <- rownames(dge_sorted)[1]
-cat("cox modeli kuruluyor:", top_overall, "\n")
+# cox regresyonu - top 5 gen + klinik degiskenlerle cok degiskenli model
+cat("cox modeli kuruluyor (multivariate)...\n")
 
-df_surv_top <- data.frame(
-  expression = as.numeric(GSE68465[, top_overall]),
-  time = df_label$time,
-  status = df_label$event
+matched_cox <- match(rownames(GSE68465), rownames(df_label))
+df_cox <- data.frame(
+  time = df_label$time[matched_cox],
+  status = df_label$event[matched_cox],
+  age = df_label$age[matched_cox],
+  sex = df_label$sex[matched_cox],
+  smoking = df_label$smoking[matched_cox],
+  grade = df_label$grade[matched_cox]
 )
-rownames(df_surv_top) <- rownames(df_label)
-df_surv_top <- df_surv_top[complete.cases(df_surv_top), ]
+rownames(df_cox) <- rownames(GSE68465)
 
-med_top <- median(df_surv_top$expression, na.rm = TRUE)
-df_surv_top$group <- ifelse(df_surv_top$expression > med_top, "High", "Low")
-df_surv_top$group <- factor(df_surv_top$group, levels = c("Low", "High"))
+# top 5 genin ifadesini medyana gore High/Low yapip ekliyoruz
+for (i in seq_along(top_5_genes)) {
+  g <- top_5_genes[i]
+  vals <- as.numeric(GSE68465[, g])
+  med_g <- median(vals, na.rm = TRUE)
+  df_cox[[paste0("gene", i)]] <- factor(ifelse(vals > med_g, "High", "Low"), levels = c("Low", "High"))
+}
 
-# klinik degiskenler
-df_surv_top$age <- df_label$age[match(rownames(df_surv_top), rownames(df_label))]
-df_surv_top$sex <- df_label$sex[match(rownames(df_surv_top), rownames(df_label))]
-df_surv_top$smoking <- df_label$smoking[match(rownames(df_surv_top), rownames(df_label))]
-df_surv_top$grade <- df_label$grade[match(rownames(df_surv_top), rownames(df_label))]
+df_cox <- df_cox[complete.cases(df_cox), ]
 
 cox <- coxph(
-  Surv(time, status) ~ group + age + sex + smoking + grade,
-  data = df_surv_top
+  Surv(time, status) ~ gene1 + gene2 + gene3 + gene4 + gene5 + age + sex + smoking + grade,
+  data = df_cox
 )
 print(summary(cox))
 
-# forest plot - hazard ratio degerlerini gosteriyo
+# forest plot
 cat("forest plot...\n")
-png(paste0("plots/forest_", top_overall, ".png"), width=12, height=6, units="in", res=300)
-p_forest <- ggforest(cox, data = df_surv_top)
+png("plots/forest_multivariate.png", width=12, height=8, units="in", res=300)
+p_forest <- ggforest(cox, data = df_cox)
 print(p_forest)
 dev.off()
 

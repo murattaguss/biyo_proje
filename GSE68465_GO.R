@@ -36,16 +36,21 @@ cat("hedef modul:", export_module, "\n")
 target_genes <- df_modules$GENE[df_modules$MODULE == export_module]
 cat("gen sayisi:", length(target_genes), "\n")
 
+# sembolleri entrez id'ye ceviriyoruz (bazi genler dusuyor uyari verir, normal)
+eg <- bitr(target_genes, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+cat("entrez'e donusen gen sayisi:", nrow(eg), "/", length(target_genes), "\n")
+
 # enrichGO ile biyolojik surecler (BP) icin zenginlestirme yapiyoruz
 cat("GO analizi basliyor...\n")
 ego <- enrichGO(
-  gene          = target_genes,
+  gene          = eg$ENTREZID,
   OrgDb         = org.Hs.eg.db,
-  keyType       = "SYMBOL",
+  keyType       = "ENTREZID",
   ont           = "BP",
   pAdjustMethod = "BH",
   pvalueCutoff  = 0.05,
-  qvalueCutoff  = 0.2
+  qvalueCutoff  = 0.2,
+  readable      = TRUE
 )
 
 if (!is.null(ego) && nrow(as.data.frame(ego)) > 0) {

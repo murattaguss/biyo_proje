@@ -76,3 +76,6 @@ library(glmnet)
 
 install.packages("pROC") # roc egrisi cizdirmek icin
 library(pROC)
+
+install.packages("gridExtra") # confusion matrix grid icin
+library(gridExtra)

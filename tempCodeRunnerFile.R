@@ -117,6 +117,4 @@ saveRDS(GSE68465, "data/GSE68465.rds")
 saveRDS(df_label, "data/GSE68465_label.rds")
 
 cat("veri on isleme bitti!\n")
-cat("GSE68465:", nrow(GSE68465), "x", ncol(GSE68465), "\n")
-cat("df_label:", nrow(df_label), "x", ncol(df_label), "\n")
-print(table(df_label$grade))
+cat("GSE68465:", nrow(GSE684

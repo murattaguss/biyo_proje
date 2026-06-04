@@ -30,7 +30,7 @@ n_samples <- nrow(GSE68465)
 dge_sorted <- read.csv("results/GSE68465-dge.csv", row.names = 1)
 up_genes <- rownames(dge_sorted[dge_sorted$logFC > 0, ])
 down_genes <- rownames(dge_sorted[dge_sorted$logFC < 0, ])
-top_degs <- c(down_genes[1:30], up_genes[1:20])
+top_degs <- na.omit(c(head(down_genes, 30), head(up_genes, 20)))
 
 hubs_df <- read.csv("results/hubsInEachModule.csv", stringsAsFactors = FALSE)
 top_hubs <- c()
@@ -139,7 +139,8 @@ for (fold_idx in 1:5) {
     fit_svm <- svm(x = X_tr, y = y_train, probability = TRUE)
     svm_pred <- predict(fit_svm, X_te, probability = TRUE)
     pred_classes[[paste0("SVM_", s)]][test_idx] <- svm_pred
-    pred_probs[[paste0("SVM_", s)]][test_idx] <- attr(svm_pred, "probabilities")[, "Poorly"]
+    probs_svm <- attr(svm_pred, "probabilities")
+    pred_probs[[paste0("SVM_", s)]][test_idx] <- probs_svm[, which(colnames(probs_svm) == "Poorly")]
     
     # lojistik regresyon
     df_tr <- as.data.frame(X_tr)
@@ -167,7 +168,7 @@ calc_metrics <- function(true_y, pred_y, pred_p) {
   recall <- TP / (TP + FN)
   f1 <- 2 * (precision * recall) / (precision + recall)
   
-  roc_obj <- roc(true_y, pred_p, quiet = TRUE)
+  roc_obj <- roc(response = true_y, predictor = pred_p, levels = c("Well", "Poorly"), direction = "<", quiet = TRUE)
   auc_val <- as.numeric(auc(roc_obj))
   
   if (is.nan(precision)) precision <- 0
@@ -210,43 +211,41 @@ for (s in setups) {
   
   for (m in models) {
     key <- paste0(m, "_", s)
-    roc_obj <- roc(grade_binary, pred_probs[[key]], quiet = TRUE)
+    roc_obj <- roc(response = grade_binary, predictor = pred_probs[[key]], levels = c("Well", "Poorly"), direction = "<", quiet = TRUE)
     plot(roc_obj, add=TRUE, col=colors[m], lwd=2)
   }
   
   legend_labels <- sapply(models, function(m) {
     key <- paste0(m, "_", s)
-    roc_obj <- roc(grade_binary, pred_probs[[key]], quiet = TRUE)
+    roc_obj <- roc(response = grade_binary, predictor = pred_probs[[key]], levels = c("Well", "Poorly"), direction = "<", quiet = TRUE)
     paste0(m, " (AUC=", round(as.numeric(auc(roc_obj)), 3), ")")
   })
   legend("bottomright", legend=legend_labels, col=colors, lwd=2, cex=0.9)
 }
 dev.off()
 
-# en iyi modelin confusion matrix'i
-best_idx <- which.max(df_perf$F1_score)
-best_model <- df_perf$Model[best_idx]
-best_setup <- df_perf$Setup[best_idx]
-best_key <- paste0(best_model, "_", best_setup)
+# tum modeller icin confusion matrix (3x3 grid)
+cm_plots <- list()
+for (m in models) {
+  for (s in setups) {
+    key <- paste0(m, "_", s)
+    conf_mat <- table(True = grade_binary, Pred = pred_classes[[key]])
+    conf_df <- as.data.frame(conf_mat)
+    
+    p_cm <- ggplot(conf_df, aes(x = Pred, y = True, fill = Freq)) +
+      geom_tile(color = "white") +
+      geom_text(aes(label = Freq), size = 5, color = "black") +
+      scale_fill_gradient(low = "#E0F2F1", high = "#00796B") +
+      theme_minimal() +
+      labs(title = paste(m, "-", s), x = "Predicted", y = "True") +
+      theme(axis.text = element_text(size = 10),
+            title = element_text(size = 9, face = "bold"))
+    cm_plots[[key]] <- p_cm
+  }
+}
 
-cat("en iyi model:", best_model, "-", best_setup, "\n")
-
-conf_mat <- table(True = grade_binary, Pred = pred_classes[[best_key]])
-conf_df <- as.data.frame(conf_mat)
-
-png("plots/confusion_matrix_best.png", width=6, height=5, units="in", res=300)
-p_cm <- ggplot(conf_df, aes(x = Pred, y = True, fill = Freq)) +
-  geom_tile(color = "white") +
-  geom_text(aes(label = Freq), size = 6, color = "black") +
-  scale_fill_gradient(low = "#E0F2F1", high = "#00796B") +
-  theme_minimal() +
-  labs(
-    title = paste("Confusion Matrix -", best_model, "(", best_setup, ")"),
-    x = "Predicted", y = "True"
-  ) +
-  theme(axis.text = element_text(size = 12),
-        title = element_text(size = 10, face = "bold"))
-print(p_cm)
+png("plots/confusion_matrices_all.png", width=15, height=12, units="in", res=300)
+gridExtra::grid.arrange(grobs = cm_plots, ncol = 3)
 dev.off()
 
 cat("ML bitti!\n")
