@@ -1,0 +1,9 @@
+# buyuk veri dosyalari - github'a yuklenmesin
+data/*.gz
+data/*.rds
+
+# R gecici dosyalari
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
