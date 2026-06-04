@@ -1,8 +1,17 @@
+
 # projede lazim olan butun paketleri buraya topladim, her seferinde teker teker kurmakla ugrasmasin diye
+# BUG COZUCU CRAN SABITLEME
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
 # bioconductor paketleri icin once bu lazim
 if (!require("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager")
 }
+
+# raw veri isleme icin gerekli
+BiocManager::install("GEOquery", update = FALSE)
+BiocManager::install("affy", update = FALSE)
+BiocManager::install("hgu133a.db", update = FALSE)
 
 # limma - DGE analizi icin, hoca bunu kullanin demisti
 BiocManager::install("limma", update = FALSE)

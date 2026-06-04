@@ -1,9 +1,9 @@
-# WGCNA - genleri birlikte ifade edilen modullere ayiriyoruz
+# WGCNA
 library(WGCNA)
 library(dplyr)
 library(tidyverse)
 
-enableWGCNAThreads() # yoksa cok yavas calisiyo
+enableWGCNAThreads() # hiz icin
 
 dir.create("plots", showWarnings = FALSE)
 dir.create("results", showWarnings = FALSE)
@@ -16,34 +16,31 @@ if (!all(rownames(GSE68465) == rownames(df_label))) {
   df_label <- df_label[match(rownames(GSE68465), rownames(df_label)), , drop = FALSE]
 }
 
-# 20bin+ gen cok fazla, en degisken 4000 geni aliyoruz
-cat("top 4000 gen seciliyor...\n")
-gene_vars <- apply(GSE68465, 2, var)
-top_genes <- names(sort(gene_vars, decreasing = TRUE)[1:4000])
-df <- GSE68465[, top_genes]
+# preprocessing'ten gelen veri
+df <- GSE68465
 df[] <- sapply(df, as.numeric)
 
-# soft threshold secimi - scale-free topology icin en uygun gucu ariyoruz
+# soft threshold
 cat("soft threshold seciliyor...\n")
 powers <- c(1:20)
 sft <- pickSoftThreshold(df, powerVector = powers, verbose = 5)
 
 png("plots/soft_th.png", width=12, height=6, units="in", res=300)
 par(mfrow = c(1, 2))
-# soldaki: R^2 ne kadar yuksekse o kadar iyi, 0.8 ustu olsun istiyoruz
+# scale independence
 plot(sft$fitIndices[, 1], -sign(sft$fitIndices[, 3]) * sft$fitIndices[, 2],
      xlab = "Power", ylab = "Scale Free Topology Model Fit", type = "n",
      main = "Scale Independence")
 text(sft$fitIndices[, 1], -sign(sft$fitIndices[, 3]) * sft$fitIndices[, 2],
      labels = powers, col = "red", cex = 1)
 abline(h = 0.8, col = "red", lty = 2)
-# sagdaki: connectivity, guc arttikca duser
+# connectivity
 plot(sft$fitIndices[, 1], sft$fitIndices[, 5], xlab = "Soft Threshold (power)",
      ylab = "Mean Connectivity", type = "n", main = "Mean connectivity")
 text(sft$fitIndices[, 1], sft$fitIndices[, 5], labels = powers, col = "red")
 dev.off()
 
-# 0.8'i gecen en kucuk gucu seciyoruz, gecen yoksa 6 aliyoruz
+# power secimi
 fit_indices <- sft$fitIndices
 suitable_powers <- fit_indices$Power[fit_indices$SFT.R.sq > 0.8]
 if (length(suitable_powers) > 0) {
@@ -62,7 +59,7 @@ TOM <- TOMsimilarity(adjacency)
 dimnames(TOM) <- list(colnames(df), colnames(df))
 dissTOM <- 1 - TOM
 
-# genleri kume agacina gore modullere ayiriyoruz
+# clustering
 cat("kumeleme yapiliyor...\n")
 geneTree <- hclust(as.dist(dissTOM), method = "average")
 
@@ -81,7 +78,7 @@ plotDendroAndColors(geneTree, moduleColors, "Module",
                     main = "Gene dendrogram and module colors")
 dev.off()
 
-# benzer modulleri birlestiriyoruz
+# merge modules
 cat("eigengene'ler hesaplaniyor...\n")
 MEList <- moduleEigengenes(df, colors = moduleColors)
 MEs <- MEList$eigengenes
@@ -147,7 +144,7 @@ trait <- data.frame(
   vital_status = df_label$event,
   time = df_label$time,
   age = df_label$age,
-  stage_late = ifelse(df_label$binary == "Late", 1, 0)
+  grade_poorly = ifelse(df_label$grade == "Poorly", 1, 0)
 )
 rownames(trait) <- rownames(df_label)
 trait <- trait[match(rownames(df), rownames(trait)), ]

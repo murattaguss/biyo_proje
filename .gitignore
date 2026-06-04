@@ -7,3 +7,4 @@ data/*.rds
 .RData
 .Rproj.user/
 *.Rproj
+/data

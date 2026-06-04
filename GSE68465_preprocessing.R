@@ -1,129 +1,119 @@
-# veri setini cekip temizledigimiz yer burasi
 library(GEOquery)
+library(affy)
 library(hgu133a.db)
 library(AnnotationDbi)
 
-dir.create("data", showWarnings = FALSE)
+dir.create("data/raw", showWarnings=F, recursive=T)
+dir.create("plots", showWarnings=F)
 
-# GEO'dan veriyi indiriyoruz, internet yavas olunca baya bekletiyor
-cat("veri seti yukleniyor...\n")
-gse <- getGEO("GSE68465", destdir = "data", GSEMatrix = TRUE)
-eset <- gse[[1]]
+# metadatayi cekelim
+gse <- getGEO("GSE68465", destdir="data", GSEMatrix=T)
+eset_meta <- gse[[1]]
 
-cat("matrisler cekiliyor...\n")
+# raw dosyalari bul ve rma yap
+raw_tar <- list.files("data", pattern="GSE68465_RAW\\.tar$", full.names=T, recursive=T)
+if(length(raw_tar) == 0) stop("data klasorune GSE68465_RAW.tar at")
+
+untar(raw_tar[1], exdir="data/raw")
+cel_files <- list.files("data/raw", pattern="[.]CEL([.]gz)?$", full.names=T, recursive=T, ignore.case=T)
+if(length(cel_files) == 0) stop("cel dosyalari bulunamadi")
+
+raw_affy <- ReadAffy(filenames=cel_files)
+eset <- rma(raw_affy)
+
 df_expr_raw <- exprs(eset)
-df_label_raw <- pData(eset)
+df_label_raw <- pData(eset_meta)
 
-# normalizasyon oncesi/sonrasi grafigi lazim rapor icin
-# veri zaten RMA normalize gelmis ama hoca oncesi de gosterilsin istiyo
-# o yuzden orijinal veriyi biraz bozup "ham veri" gibi gosterdik
-cat("normalizasyon grafikleri ciziliyor...\n")
-dir.create("plots", showWarnings = FALSE)
-
-set.seed(123)
-df_expr_unnorm <- df_expr_raw[, 1:30]
-for (i in 1:30) {
-  # rastgele kaydirma ve olcekleme ekleyince bozuk gibi gozukuyor
-  scale_val <- runif(1, 0.8, 1.2)
-  shift_val <- runif(1, -1.5, 1.5)
-  df_expr_unnorm[, i] <- df_expr_unnorm[, i] * scale_val + shift_val
-}
-
+# normalizasyon oncesi/sonrasi boxplot (hoca istemisti)
+n_plot <- min(30, ncol(df_expr_raw))
+plot_idx <- seq_len(n_plot)
+raw_affy_30 <- raw_affy[, plot_idx]
 png("plots/normalization_before_after.png", width=12, height=6, units="in", res=300)
-par(mfrow = c(1, 2))
-par(mar = c(8, 4, 4, 2) + 0.1)
-boxplot(df_expr_unnorm, outline = FALSE, las = 2, col = "#E64B35",
-        main = "Normalizasyon Öncesi (Simüle Edilmiş Ham Veri)",
-        ylab = "log2 Intensity")
-boxplot(df_expr_raw[, 1:30], outline = FALSE, las = 2, col = "#00A087",
-        main = "Normalizasyon Sonrası (RMA Normalized)",
-        ylab = "log2 Intensity")
+par(mfrow=c(1,2), mar=c(8,4,4,2))
+boxplot(log2(intensity(raw_affy_30)), outline=F, las=2, col="#E64B35", main="Norm Oncesi (log2 Raw)", ylab="log2 Intensity")
+boxplot(exprs(rma(raw_affy_30)), outline=F, las=2, col="#00A087", main="Norm Sonrasi (RMA)", ylab="log2 Intensity")
 dev.off()
 
-# 19 tane normal referans ornegi var, vital_status NA olan satirlar bunlar
-# bunlari ucuruyoruz, sadece tumor ornekleri kalsin
-cat("kontrol ornekleri filtreleniyor...\n")
-tumor_samples <- rownames(df_label_raw)[!is.na(df_label_raw[["vital_status:ch1"]])]
-df_expr_tumor <- df_expr_raw[, tumor_samples]
-df_label_tumor <- df_label_raw[tumor_samples, ]
-
-# prob id'lerini gen isimlerine ceviriyoruz
-# 200000_s_at falan yazıyo satir isimlerinde, anlam ifade etmiyo
-cat("prob -> gen sembol eslemesi yapiliyor...\n")
-probe_ids <- rownames(df_expr_tumor)
-probe_to_symbol <- select(hgu133a.db, keys = probe_ids, columns = c("SYMBOL"), keytype = "PROBEID")
-probe_to_symbol <- probe_to_symbol[!is.na(probe_to_symbol$SYMBOL), ]
-
-mapped_probes <- data.frame(
-  PROBEID = probe_to_symbol$PROBEID,
-  SYMBOL = probe_to_symbol$SYMBOL,
-  stringsAsFactors = FALSE
+# sample isimlerini esle (bazen GSM ile ham dosya isimleri tutmuyor)
+sample_map <- data.frame(
+  raw_sample = sampleNames(raw_affy),
+  geo_sample = sub("^.*\\.(GSM[0-9]+)(?:_.*)?$", "\\1", sampleNames(raw_affy)),
+  stringsAsFactors = F
 )
 
-df_expr_mapped <- df_expr_tumor[mapped_probes$PROBEID, ]
-df_expr_mapped <- as.data.frame(df_expr_mapped)
-df_expr_mapped$PROBEID <- mapped_probes$PROBEID
-df_expr_mapped$SYMBOL <- mapped_probes$SYMBOL
+matched <- match(sample_map$geo_sample, rownames(df_label_raw))
+keep <- !is.na(matched)
+sample_map <- sample_map[keep, ]
+df_label_raw <- df_label_raw[matched[keep], , drop=F]
+rownames(df_label_raw) <- sample_map$raw_sample
+df_expr_raw <- df_expr_raw[, sample_map$raw_sample, drop=F]
 
-# ayni gene birden fazla prob denk geliyo, en yuksek varyansli olani tutuyoruz
-# hoca derste boyle yapin demisti
-cat("duplike genler eleniyor...\n")
-probe_vars <- apply(df_expr_mapped[, -c(ncol(df_expr_mapped)-1, ncol(df_expr_mapped))], 1, var, na.rm = TRUE)
-df_expr_mapped$var <- probe_vars
+# normal dokulari (vital_status NA olanlar) atiyoruz sadece tumor kalsin
+is_tumor <- !is.na(df_label_raw[["vital_status:ch1"]])
+df_expr_tumor <- df_expr_raw[, is_tumor, drop=F]
+df_label_tumor <- df_label_raw[is_tumor, , drop=F]
 
-df_expr_mapped <- df_expr_mapped[order(df_expr_mapped$SYMBOL, -df_expr_mapped$var), ]
-df_expr_clean <- df_expr_mapped[!duplicated(df_expr_mapped$SYMBOL), ]
+# anotasyon kismi (prob -> gen)
+probe_ids <- rownames(df_expr_tumor)
+probe_to_sym <- select(hgu133a.db, keys=probe_ids, columns="SYMBOL", keytype="PROBEID")
+probe_to_sym <- probe_to_sym[!is.na(probe_to_sym$SYMBOL), ]
 
-rownames(df_expr_clean) <- df_expr_clean$SYMBOL
-# gecici kolonlari siliyoruz
-GSE68465 <- df_expr_clean[, -c(ncol(df_expr_clean)-2, ncol(df_expr_clean)-1, ncol(df_expr_clean))] 
-# satirda hasta, sutunda gen olacak sekilde ceviriyoruz
-GSE68465 <- as.data.frame(t(GSE68465))
+df_mapped <- df_expr_tumor[probe_to_sym$PROBEID, ]
+df_mapped <- as.data.frame(df_mapped)
+df_mapped$SYMBOL <- probe_to_sym$SYMBOL
 
-# klinik verileri duzenliyoruz
-cat("klinik veriler temizleniyor...\n")
+# ayni gen birden fazla proba denk geliyorsa varyansi en yuksek olani tutalim
+df_mapped$var <- apply(df_mapped[, -ncol(df_mapped)], 1, var, na.rm=T)
+df_mapped <- df_mapped[order(df_mapped$SYMBOL, -df_mapped$var), ]
+df_mapped <- df_mapped[!duplicated(df_mapped$SYMBOL), ]
+rownames(df_mapped) <- df_mapped$SYMBOL
+df_mapped <- df_mapped[, !(colnames(df_mapped) %in% c("SYMBOL", "var"))]
 
-# evre belirleme fonksiyonu, hocanin verdigi kurallara gore
-clean_stage <- function(x) {
-  if (is.na(x)) return(NA)
-  if (grepl("pN2", x)) return("Stage III")
-  if (grepl("pN1", x)) {
-    if (grepl("T3|T4", x)) return("Stage III")
-    return("Stage II")
-  }
-  if (grepl("pN0", x)) {
-    if (grepl("T4", x)) return("Stage III")
-    if (grepl("T3", x)) return("Stage II")
-    return("Stage I")
-  }
-  return(NA)
-}
+# matrisi transpose edip df yapiyoruz (hasta satirlarda genler sutunlarda)
+GSE68465 <- as.data.frame(t(df_mapped))
 
-# sigara bilgisi cok daginikmis, sadece ever/never/unknown yaptik
-smoke_clean <- ifelse(df_label_tumor[["smoking_history:ch1"]] %in% c("Currently smoking", "Smoked in the past"), "Ever",
-                      ifelse(df_label_tumor[["smoking_history:ch1"]] == "Never smoked", "Never", "Unknown"))
+# projede istenen top-3000 hvg seciyoruz
+gene_var <- apply(GSE68465, 2, var, na.rm=T)
+n_hvg <- min(3000, length(gene_var))
+top_hvg <- names(sort(gene_var, decreasing = TRUE))[seq_len(n_hvg)]
+GSE68465 <- GSE68465[, top_hvg, drop=F]
+
+# klinik verileri toparlayalim
+grade_raw <- toupper(trimws(df_label_tumor[["histologic_grade:ch1"]]))
+grade_clean <- ifelse(grade_raw %in% c("--", ""), NA, grade_raw)
+grade_clean <- ifelse(
+  grade_clean == "WELL DIFFERENTIATED", "Well",
+  ifelse(
+    grade_clean == "MODERATE DIFFERENTIATION", "Moderate",
+    ifelse(grade_clean == "POORLY DIFFERENTIATED", "Poorly", NA)
+  )
+)
+
+smoke_clean <- ifelse(
+  df_label_tumor[["smoking_history:ch1"]] %in% c("Currently smoking", "Smoked in the past"), "Ever",
+  ifelse(df_label_tumor[["smoking_history:ch1"]] == "Never smoked", "Never", "Unknown")
+)
 
 df_label <- data.frame(
   row.names = rownames(df_label_tumor),
-  stage = sapply(df_label_tumor[["disease_stage:ch1"]], clean_stage),
   time = as.numeric(df_label_tumor[["months_to_last_contact_or_death:ch1"]]),
   event = ifelse(df_label_tumor[["vital_status:ch1"]] == "Dead", 1, 0),
+  grade = factor(grade_clean, levels = c("Well", "Moderate", "Poorly")),
   age = as.numeric(df_label_tumor[["age:ch1"]]),
   sex = factor(df_label_tumor[["Sex:ch1"]]),
-  smoking = factor(smoke_clean, levels = c("Never", "Ever", "Unknown")),
-  relapse = ifelse(df_label_tumor[["first_progression_or_relapse:ch1"]] == "Yes", 1, 0),
-  relapse_time = suppressWarnings(as.numeric(df_label_tumor[["months_to_first_progression:ch1"]]))
+  smoking = factor(smoke_clean, levels=c("Never", "Ever", "Unknown"))
 )
 
-df_label$stage <- factor(df_label$stage, levels = c("Stage I", "Stage II", "Stage III"))
-df_label$binary <- ifelse(df_label$stage %in% c("Stage I", "Stage II"), "Early", "Late")
-df_label$binary <- factor(df_label$binary, levels = c("Early", "Late"))
+# grade verisi eksik olanlari ucur
+valid <- !is.na(df_label$grade)
+GSE68465 <- GSE68465[valid, , drop=F]
+df_label <- df_label[valid, , drop=F]
 
-# rds olarak kaydediyoruz, diger scriptlerde hizli yuklensin diye
-cat("veriler kaydediliyor...\n")
+# diger kodlarda kullanmak icin rds kaydediyoruz
 saveRDS(GSE68465, "data/GSE68465.rds")
 saveRDS(df_label, "data/GSE68465_label.rds")
 
-cat("on isleme bitti!\n")
-cat("GSE68465:", dim(GSE68465)[1], "hasta x", dim(GSE68465)[2], "gen\n")
-cat("label:", dim(df_label)[1], "hasta x", dim(df_label)[2], "degisken\n")
+cat("veri on isleme bitti!\n")
+cat("GSE68465:", nrow(GSE68465), "x", ncol(GSE68465), "\n")
+cat("df_label:", nrow(df_label), "x", ncol(df_label), "\n")
+print(table(df_label$grade))

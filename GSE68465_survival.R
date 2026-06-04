@@ -1,4 +1,4 @@
-# survival analizi - genlerin hayatta kalmayla iliskisine bakiyoruz
+# survival analizi
 library(survival)
 library(survminer)
 
@@ -9,13 +9,13 @@ GSE68465 <- readRDS("data/GSE68465.rds")
 df_label <- readRDS("data/GSE68465_label.rds")
 dge_sorted <- read.csv("results/GSE68465-dge.csv", row.names = 1)
 
-# hem up hem down genlerden secmemiz lazim, 3 down 2 up aldik
+# up ve down genler
 up_genes <- rownames(dge_sorted[dge_sorted$logFC > 0, ])
 down_genes <- rownames(dge_sorted[dge_sorted$logFC < 0, ])
 top_5_genes <- c(down_genes[1:3], up_genes[1:2])
 cat("secilen genler:", paste(top_5_genes, collapse = ", "), "\n")
 
-# her gen icin ayri KM egrisi ciziyoruz
+# KM egrisi
 for (gene in top_5_genes) {
   cat("KM egrisi:", gene, "\n")
   
@@ -27,7 +27,7 @@ for (gene in top_5_genes) {
   rownames(df_surv) <- rownames(df_label)
   df_surv <- df_surv[complete.cases(df_surv), ]
   
-  # medyana gore high/low diye boluyoruz
+  # mediana gore boluyoruz
   med <- median(df_surv$expression, na.rm = TRUE)
   df_surv$group <- ifelse(df_surv$expression > med, "High", "Low")
   df_surv$group <- factor(df_surv$group, levels = c("Low", "High"))
@@ -35,7 +35,7 @@ for (gene in top_5_genes) {
   surv_obj <- Surv(time = df_surv$time, event = df_surv$status)
   fit_km <- survfit(surv_obj ~ group, data = df_surv)
   
-  # pval=TRUE log-rank p degerini yazdiriyo, risk.table altta hasta sayisini gosteriyo
+  # pval ve risk tablosu
   png(paste0("plots/survival_", gene, ".png"), width=12, height=6, units="in", res=300)
   p_surv <- ggsurvplot(
     fit_km,
@@ -51,8 +51,8 @@ for (gene in top_5_genes) {
   dev.off()
 }
 
-# en anlamli gen icin cox regresyonu
-# sadece KM yetmez, genin etkisi yas/evre/cinsiyet gibi seylerden bagimsiz mi bunu gormeliyiz
+# cox regresyonu
+# genin etkisini bakiyoruz
 top_overall <- rownames(dge_sorted)[1]
 cat("cox modeli kuruluyor:", top_overall, "\n")
 
@@ -68,14 +68,14 @@ med_top <- median(df_surv_top$expression, na.rm = TRUE)
 df_surv_top$group <- ifelse(df_surv_top$expression > med_top, "High", "Low")
 df_surv_top$group <- factor(df_surv_top$group, levels = c("Low", "High"))
 
-# klinik degiskenleri ekliyoruz
+# klinik degiskenler
 df_surv_top$age <- df_label$age[match(rownames(df_surv_top), rownames(df_label))]
 df_surv_top$sex <- df_label$sex[match(rownames(df_surv_top), rownames(df_label))]
-df_surv_top$stage <- df_label$binary[match(rownames(df_surv_top), rownames(df_label))]
 df_surv_top$smoking <- df_label$smoking[match(rownames(df_surv_top), rownames(df_label))]
+df_surv_top$grade <- df_label$grade[match(rownames(df_surv_top), rownames(df_label))]
 
 cox <- coxph(
-  Surv(time, status) ~ group + age + sex + stage + smoking,
+  Surv(time, status) ~ group + age + sex + smoking + grade,
   data = df_surv_top
 )
 print(summary(cox))
